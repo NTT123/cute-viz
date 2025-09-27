@@ -1,0 +1,14 @@
+[project]
+name = "cute-viz"
+version = "0.1.0"
+description = "A Python package for visualizing CuTe tensor layouts as SVG images"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "nvidia-cutlass-dsl==4.2.0",
+    "cuda-bindings==12.9.1",
+    "cuda-python==12.9.1",
+    "svgwrite",
+    "ipython",
+]
