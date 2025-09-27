@@ -16,3 +16,7 @@ dependencies = [
     "svgwrite",
     "ipython",
 ]
+
+[tool.setuptools.packages.find]
+include = ["cute_viz*"]
+exclude = ["assets*"]
