@@ -48,12 +48,35 @@ visualize_tv_layout()
 
 ### Display in Jupyter Notebooks
 
+#### Display from file
 ```python
 from cute_viz import display_svg
 
 # Display the generated SVG in a Jupyter notebook
 display_svg("layout.svg")
 display_svg("tv_layout.svg")
+```
+
+#### Display directly without writing to disk
+```python
+from cutlass import cute
+from cute_viz import display_layout, display_tv_layout
+
+@cute.jit
+def display_layouts_directly():
+    # Basic layout visualization - no file needed
+    layout = cute.make_layout((4, 6), stride=(3, 1))
+    display_layout(layout)
+
+    # Thread-value layout visualization - no file needed
+    tile_mn = (8, 8)
+    tv_layout = cute.make_layout(
+        shape=((2, 2, 2), (2, 2, 2)),
+        stride=((1, 16, 4), (8, 2, 32))
+    )
+    display_tv_layout(tv_layout, tile_mn)
+
+display_layouts_directly()
 ```
 
 ## Example Output
@@ -88,6 +111,21 @@ Renders a CuTe thread-value (TV) layout as an SVG grid with thread and value ID 
 Displays an SVG file in Jupyter notebooks.
 
 - **file_path**: Path to the SVG file to display
+- **Returns**: IPython display object
+
+### `display_layout(layout)`
+
+Displays a CuTe layout directly in Jupyter notebooks without writing to disk.
+
+- **layout**: CuTe layout object
+- **Returns**: IPython display object
+
+### `display_tv_layout(layout, tile_mn)`
+
+Displays a CuTe thread-value (TV) layout directly in Jupyter notebooks without writing to disk.
+
+- **layout**: CuTe layout object (must be rank-2 TV Layout)
+- **tile_mn**: Rank-2 MN Tile
 - **Returns**: IPython display object
 
 ## License
