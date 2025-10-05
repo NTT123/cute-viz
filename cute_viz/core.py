@@ -1397,7 +1397,7 @@ def display_mma_layout(tiled_mma, tile_mnk):
     """
     from IPython.display import SVG, display
     dwg = _create_mma_layout_svg(tiled_mma, tile_mnk)
-    return SVG(dwg.tostring())
+    return display(SVG(dwg.tostring()))
 
 
 ###################################
@@ -1462,6 +1462,6 @@ def display_tiled_mma(tiled_mma, tile_mnk):
         >>> # Display inline in Jupyter
         >>> display_tiled_mma(tiled_mma, (8, 8, 8))
     """
-    from IPython.display import SVG
+    from IPython.display import SVG, display
     dwg = _create_mma_layout_svg(tiled_mma, tile_mnk)
-    return SVG(dwg.tostring())
+    return display(SVG(dwg.tostring()))
