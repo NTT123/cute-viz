@@ -26,6 +26,12 @@ def main():
 main()
 ```
 
+## Examples
+
+See the [examples/](examples/) directory for complete, runnable examples:
+- [`layout_example.py`](examples/layout_example.py) - Basic layout visualization
+- [`tv_layout_example.py`](examples/tv_layout_example.py) - Thread-value layout visualization
+
 ## Example Output
 
 ![Basic Layout](assets/layout.svg)
