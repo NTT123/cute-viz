@@ -58,13 +58,19 @@ def _create_layout_svg(layout):
     # Extract indices using JIT-compiled function with range_constexpr
     indices = _extract_layout_indices(layout, M, N)
 
-    dwg = svgwrite.Drawing(size=(N * cell_size, M * cell_size))
+    # Add margin for axis labels (1 cell on left, 1 cell on top)
+    label_margin = cell_size
+    page_width = N * cell_size + label_margin
+    page_height = M * cell_size + label_margin
 
+    dwg = svgwrite.Drawing(size=(page_width, page_height))
+
+    # Draw grid cells (offset by label_margin)
     for i in range(M):
         for j in range(N):
             idx = indices[i, j]
-            x = j * cell_size
-            y = i * cell_size
+            x = j * cell_size + label_margin
+            y = i * cell_size + label_margin
 
             dwg.add(
                 dwg.rect(
@@ -86,6 +92,35 @@ def _create_layout_svg(layout):
                     font_size="8px",
                 )
             )
+
+    # Add axis labels (matching C++ print_latex behavior)
+    # Top labels: column indices (0 to N-1)
+    for j in range(N):
+        x = j * cell_size + label_margin + cell_size // 2
+        y = label_margin // 2
+        dwg.add(
+            dwg.text(
+                str(j),
+                insert=(x, y),
+                text_anchor="middle",
+                alignment_baseline="central",
+                font_size="8px",
+            )
+        )
+
+    # Left labels: row indices (0 to M-1)
+    for i in range(M):
+        x = label_margin // 2
+        y = i * cell_size + label_margin + cell_size // 2
+        dwg.add(
+            dwg.text(
+                str(i),
+                insert=(x, y),
+                text_anchor="middle",
+                alignment_baseline="central",
+                font_size="8px",
+            )
+        )
 
     return dwg
 
@@ -181,25 +216,32 @@ def _create_tv_layout_svg(layout, tile_mn):
     # Extract coordinates using JIT-compiled function with range_constexpr
     coords = _extract_tv_layout_coords(layout, num_threads, num_values)
 
-    filled = np.zeros((M, N), dtype=bool)
-    dwg = svgwrite.Drawing(size=(N * cell_size, M * cell_size))
+    # Add margin for axis labels
+    label_margin = cell_size
+    page_width = N * cell_size + label_margin
+    page_height = M * cell_size + label_margin
 
+    filled = np.zeros((M, N), dtype=bool)
+    dwg = svgwrite.Drawing(size=(page_width, page_height))
+
+    # Draw white background grid (offset by label_margin)
     for i in range(M):
         for j in range(N):
             dwg.add(
                 dwg.rect(
-                    insert=(j * cell_size, i * cell_size),
+                    insert=(j * cell_size + label_margin, i * cell_size + label_margin),
                     size=(cell_size, cell_size),
                     fill="white",
                     stroke="black",
                 )
             )
 
+    # Draw colored cells with thread/value labels
     for tid in range(num_threads):
         for vid in range(num_values):
             i, j = int(coords[tid, vid, 0]), int(coords[tid, vid, 1])
-            x = j * cell_size
-            y = i * cell_size
+            x = j * cell_size + label_margin
+            y = i * cell_size + label_margin
 
             if filled[i, j]:
                 continue
@@ -234,6 +276,35 @@ def _create_tv_layout_svg(layout, tile_mn):
                     font_size="8px",
                 )
             )
+
+    # Add axis labels (matching C++ print_latex_tv behavior)
+    # Top labels: column indices (0 to N-1)
+    for j in range(N):
+        x = j * cell_size + label_margin + cell_size // 2
+        y = label_margin // 2
+        dwg.add(
+            dwg.text(
+                str(j),
+                insert=(x, y),
+                text_anchor="middle",
+                alignment_baseline="central",
+                font_size="8px",
+            )
+        )
+
+    # Left labels: row indices (0 to M-1)
+    for i in range(M):
+        x = label_margin // 2
+        y = i * cell_size + label_margin + cell_size // 2
+        dwg.add(
+            dwg.text(
+                str(i),
+                insert=(x, y),
+                text_anchor="middle",
+                alignment_baseline="central",
+                font_size="8px",
+            )
+        )
 
     return dwg
 
@@ -376,13 +447,19 @@ def _create_swizzle_layout_svg(layout):
     # Extract indices using JIT-compiled function with range_constexpr
     indices = _extract_swizzle_indices(layout, M, N)
 
-    dwg = svgwrite.Drawing(size=(N * cell_size, M * cell_size))
+    # Add margin for axis labels (1 cell on left, 1 cell on top)
+    label_margin = cell_size
+    page_width = N * cell_size + label_margin
+    page_height = M * cell_size + label_margin
 
+    dwg = svgwrite.Drawing(size=(page_width, page_height))
+
+    # Draw grid cells (offset by label_margin)
     for i in range(M):
         for j in range(N):
             idx = indices[i, j]
-            x = j * cell_size
-            y = i * cell_size
+            x = j * cell_size + label_margin
+            y = i * cell_size + label_margin
 
             dwg.add(
                 dwg.rect(
@@ -404,6 +481,35 @@ def _create_swizzle_layout_svg(layout):
                     font_size="8px",
                 )
             )
+
+    # Add axis labels (matching C++ print_latex behavior)
+    # Top labels: column indices (0 to N-1)
+    for j in range(N):
+        x = j * cell_size + label_margin + cell_size // 2
+        y = label_margin // 2
+        dwg.add(
+            dwg.text(
+                str(j),
+                insert=(x, y),
+                text_anchor="middle",
+                alignment_baseline="central",
+                font_size="8px",
+            )
+        )
+
+    # Left labels: row indices (0 to M-1)
+    for i in range(M):
+        x = label_margin // 2
+        y = i * cell_size + label_margin + cell_size // 2
+        dwg.add(
+            dwg.text(
+                str(i),
+                insert=(x, y),
+                text_anchor="middle",
+                alignment_baseline="central",
+                font_size="8px",
+            )
+        )
 
     return dwg
 
@@ -483,18 +589,22 @@ def _create_copy_layout_svg(layout_s, layout_d, tile_mn):
 
     # Horizontal gap between source and destination grids
     gap = 3 * cell_size
-    total_width = 2 * N * cell_size + gap
+
+    # Add margin for axis labels (1 cell on left for S, 1 cell on top, 1 cell on right for D)
+    label_margin = cell_size
+    total_width = 2 * N * cell_size + gap + 2 * label_margin
+    page_height = M * cell_size + label_margin
 
     filled_s = np.zeros((M, N), dtype=bool)
     filled_d = np.zeros((M, N), dtype=bool)
-    dwg = svgwrite.Drawing(size=(total_width, M * cell_size))
+    dwg = svgwrite.Drawing(size=(total_width, page_height))
 
     # Draw source grid (left side) - background cells
     for i in range(M):
         for j in range(N):
             dwg.add(
                 dwg.rect(
-                    insert=(j * cell_size, i * cell_size),
+                    insert=(label_margin + j * cell_size, label_margin + i * cell_size),
                     size=(cell_size, cell_size),
                     fill="white",
                     stroke="black",
@@ -502,12 +612,12 @@ def _create_copy_layout_svg(layout_s, layout_d, tile_mn):
             )
 
     # Draw destination grid (right side) - background cells
-    x_offset = N * cell_size + gap
+    x_offset = label_margin + N * cell_size + gap
     for i in range(M):
         for j in range(N):
             dwg.add(
                 dwg.rect(
-                    insert=(x_offset + j * cell_size, i * cell_size),
+                    insert=(x_offset + j * cell_size, label_margin + i * cell_size),
                     size=(cell_size, cell_size),
                     fill="white",
                     stroke="black",
@@ -518,8 +628,8 @@ def _create_copy_layout_svg(layout_s, layout_d, tile_mn):
     for tid in range(num_threads):
         for vid in range(num_values):
             i, j = int(coords_s[tid, vid, 0]), int(coords_s[tid, vid, 1])
-            x = j * cell_size
-            y = i * cell_size
+            x = label_margin + j * cell_size
+            y = label_margin + i * cell_size
 
             if filled_s[i, j]:
                 continue
@@ -560,7 +670,7 @@ def _create_copy_layout_svg(layout_s, layout_d, tile_mn):
         for vid in range(num_values):
             i, j = int(coords_d[tid, vid, 0]), int(coords_d[tid, vid, 1])
             x = x_offset + j * cell_size
-            y = i * cell_size
+            y = label_margin + i * cell_size
 
             if filled_d[i, j]:
                 continue
@@ -595,6 +705,44 @@ def _create_copy_layout_svg(layout_s, layout_d, tile_mn):
                     font_size="8px",
                 )
             )
+
+    # Add axis labels for source grid (matching C++ print_latex_copy behavior)
+    # Top labels: column indices (0 to N-1)
+    for j in range(N):
+        x = j * cell_size + label_margin + cell_size // 2
+        y = label_margin // 2
+        dwg.add(dwg.text(str(j), insert=(x, y),
+                        text_anchor="middle",
+                        alignment_baseline="central",
+                        font_size="8px"))
+
+    # Left labels: row indices (0 to M-1)
+    for i in range(M):
+        x = label_margin // 2
+        y = i * cell_size + label_margin + cell_size // 2
+        dwg.add(dwg.text(str(i), insert=(x, y),
+                        text_anchor="middle",
+                        alignment_baseline="central",
+                        font_size="8px"))
+
+    # Add axis labels for destination grid
+    # Top labels: column indices (0 to N-1)
+    for j in range(N):
+        x = x_offset + j * cell_size + cell_size // 2
+        y = label_margin // 2
+        dwg.add(dwg.text(str(j), insert=(x, y),
+                        text_anchor="middle",
+                        alignment_baseline="central",
+                        font_size="8px"))
+
+    # Right labels: row indices (0 to M-1) - placed on RIGHT side for D grid
+    for i in range(M):
+        x = x_offset + N * cell_size + label_margin // 2
+        y = i * cell_size + label_margin + cell_size // 2
+        dwg.add(dwg.text(str(i), insert=(x, y),
+                        text_anchor="middle",
+                        alignment_baseline="central",
+                        font_size="8px"))
 
     return dwg
 
@@ -876,9 +1024,12 @@ def _create_mma_layout_svg(tiled_mma, tile_mnk):
 
     cell_size = 20
 
+    # Add margin for axis labels
+    label_margin = cell_size
+
     # SVG dimensions
-    page_width = (K + N + 2) * cell_size
-    page_height = (K + M + 2) * cell_size
+    page_width = (K + N + 2) * cell_size + label_margin
+    page_height = (K + M + 2) * cell_size + label_margin
 
     dwg = svgwrite.Drawing(size=(page_width, page_height))
 
@@ -921,8 +1072,8 @@ def _create_mma_layout_svg(tiled_mma, tile_mnk):
             if m < M and n < N and not filled[m, n, 0]:
                 filled[m, n, 0] = True
 
-                x = (n + K + 2) * cell_size
-                y = (m + K + 2) * cell_size
+                x = label_margin + (n + K + 2) * cell_size
+                y = label_margin + (m + K + 2) * cell_size
 
                 color = rgb_255_colors[tid % len(rgb_255_colors)]
 
@@ -964,8 +1115,8 @@ def _create_mma_layout_svg(tiled_mma, tile_mnk):
             if m < M and k < K and not filled[m, 0, k]:
                 filled[m, 0, k] = True
 
-                x = (k + 1) * cell_size
-                y = (m + K + 2) * cell_size
+                x = label_margin + (k + 1) * cell_size
+                y = label_margin + (m + K + 2) * cell_size
 
                 color = rgb_255_colors[tid % len(rgb_255_colors)]
 
@@ -1007,8 +1158,8 @@ def _create_mma_layout_svg(tiled_mma, tile_mnk):
             if n < N and k < K and not filled[0, n, k]:
                 filled[0, n, k] = True
 
-                x = (n + K + 2) * cell_size
-                y = (k + 1) * cell_size
+                x = label_margin + (n + K + 2) * cell_size
+                y = label_margin + (k + 1) * cell_size
 
                 color = rgb_255_colors[tid % len(rgb_255_colors)]
 
@@ -1039,6 +1190,46 @@ def _create_mma_layout_svg(tiled_mma, tile_mnk):
                     font_size='8px'
                 )
                 dwg.add(text2)
+
+    # Add axis labels (matching C++ print_latex_mma behavior)
+
+    # --- A matrix (M×K) axis labels ---
+    # Top labels: K dimension (0 to K-1)
+    for k in range(K):
+        x = label_margin + (k + 1) * cell_size + cell_size // 2
+        y = label_margin + (K + 2) * cell_size - cell_size // 2
+        dwg.add(dwg.text(str(k), insert=(x, y),
+                        text_anchor="middle",
+                        alignment_baseline="central",
+                        font_size="8px"))
+
+    # Left labels: M dimension (0 to M-1)
+    for m in range(M):
+        x = label_margin + cell_size // 2
+        y = label_margin + (m + K + 2) * cell_size + cell_size // 2
+        dwg.add(dwg.text(str(m), insert=(x, y),
+                        text_anchor="middle",
+                        alignment_baseline="central",
+                        font_size="8px"))
+
+    # --- B matrix (K×N, shown transposed) axis labels ---
+    # Top labels: K dimension (0 to K-1)
+    for k in range(K):
+        x = label_margin + (K + 2) * cell_size - cell_size // 2
+        y = label_margin + (k + 1) * cell_size + cell_size // 2
+        dwg.add(dwg.text(str(k), insert=(x, y),
+                        text_anchor="middle",
+                        alignment_baseline="central",
+                        font_size="8px"))
+
+    # Right labels: N dimension (0 to N-1)
+    for n in range(N):
+        x = label_margin + (n + K + 2) * cell_size + cell_size // 2
+        y = label_margin + cell_size // 2
+        dwg.add(dwg.text(str(n), insert=(x, y),
+                        text_anchor="middle",
+                        alignment_baseline="central",
+                        font_size="8px"))
 
     return dwg
 
