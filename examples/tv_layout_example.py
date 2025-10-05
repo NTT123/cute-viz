@@ -18,8 +18,8 @@ def main():
     )
 
     # Render to SVG file
-    render_tv_layout_svg(tv_layout, tile_mn, "tv_layout.svg")
-    print("TV layout saved to tv_layout.svg")
+    render_tv_layout_svg(tv_layout, tile_mn, "assets/tv_layout.svg")
+    print("TV layout saved to assets/tv_layout.svg")
 
     # Or display directly in Jupyter notebook
     # Uncomment the line below when running in Jupyter
