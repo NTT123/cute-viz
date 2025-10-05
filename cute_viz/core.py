@@ -30,23 +30,16 @@ def _create_layout_svg(layout):
         (80, 80, 80),
     ]
 
-    # Cell size in pixels
     cell_size = 20
-
-    # Grid size
     M, N = size(layout[0]), size(layout[1])
-
-    # Create SVG canvas
     dwg = svgwrite.Drawing(size=(N * cell_size, M * cell_size))
 
-    # Draw grid cells
     for i in range(M):
         for j in range(N):
             idx = layout((i, j))
             x = j * cell_size
             y = i * cell_size
 
-            # Draw rectangle
             dwg.add(
                 dwg.rect(
                     insert=(x, y),
@@ -58,7 +51,6 @@ def _create_layout_svg(layout):
                 )
             )
 
-            # Add label text
             dwg.add(
                 dwg.text(
                     str(idx),
@@ -88,9 +80,8 @@ def _create_tv_layout_svg(layout, tile_mn):
 
     coord = make_identity_tensor(tile_mn)
     layout = cute.composition(coord, layout)
-    # assert congruent(coprofile(layout), (0,0)), "Expected a 2D codomain (tid,vid) -> (m,n)"
 
-    # 8 RGB-255 colors, TODO Generalize
+    # 8 RGB-255 colors
     rgb_255_colors = [
         (175, 175, 255),
         (175, 255, 175),
@@ -102,17 +93,11 @@ def _create_tv_layout_svg(layout, tile_mn):
         (255, 210, 210),
     ]
 
-    # Cell size in pixels
     cell_size = 20
-
-    # Grid size
     M, N = size(tile_mn[0]), size(tile_mn[1])
     filled = np.zeros((M, N), dtype=bool)
-
-    # Create SVG canvas
     dwg = svgwrite.Drawing(size=(N * cell_size, M * cell_size))
 
-    # Fill in grid
     for i in range(M):
         for j in range(N):
             dwg.add(
@@ -124,7 +109,6 @@ def _create_tv_layout_svg(layout, tile_mn):
                 )
             )
 
-    # Draw TV cells
     for tid in range(size(layout, mode=[0])):
         for vid in range(size(layout, mode=[1])):
             i, j = layout[(tid, vid)]
@@ -135,7 +119,6 @@ def _create_tv_layout_svg(layout, tile_mn):
                 continue
             filled[i, j] = True
 
-            # Draw rectangle
             dwg.add(
                 dwg.rect(
                     insert=(x, y),
@@ -147,7 +130,6 @@ def _create_tv_layout_svg(layout, tile_mn):
                 )
             )
 
-            # Add label text
             dwg.add(
                 dwg.text(
                     f"T{tid}",
