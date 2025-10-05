@@ -17,7 +17,7 @@ from cute_viz import render_layout_svg, display_layout
 @cute.jit
 def main():
     # Create and render a layout to file
-    layout = cute.make_layout((4, 6), stride=(3, 1))
+    layout = cute.make_layout((8, 8), stride=(8, 1))
     render_layout_svg(layout, "layout.svg")
 
     # Or display directly in Jupyter notebook
@@ -28,15 +28,11 @@ main()
 
 ## Examples
 
-See the [examples/](examples/) directory for complete, runnable examples:
-- [`layout_example.py`](examples/layout_example.py) - Basic layout visualization
-- [`tv_layout_example.py`](examples/tv_layout_example.py) - Thread-value layout visualization
-
-## Example Output
-
-![Basic Layout](assets/layout.svg)
-
-![TV Layout](assets/tv_layout.svg)
+| Example | Output |
+|---------|--------|
+| [**Basic Layout**](examples/layout_example.py) | ![Basic Layout](assets/layout.svg) |
+| [**Swizzle Layout**](examples/swizzle_layout_example.py) | ![Swizzle Layout](assets/swizzle_layout.svg) |
+| [**Thread-Value Layout**](examples/tv_layout_example.py) | ![TV Layout](assets/tv_layout.svg) |
 
 ## Credits
 
