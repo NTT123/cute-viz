@@ -787,3 +787,357 @@ def display_tiled_copy(tiled_copy, tile_mn):
 
     # Display the copy layout
     return display_copy_layout(tensor_s_tv, tensor_d_tv, tile_mn)
+
+
+###################################
+# MMA (Matrix Multiply-Accumulate) Visualization
+###################################
+
+
+@cute.jit
+def _extract_mma_coords(tensorC, tensorA, tensorB, num_threads_C, num_values_C, num_threads_A, num_values_A, num_threads_B, num_values_B):
+    """
+    Extract coordinates from A, B, and C tensors using compile-time loops.
+
+    Args:
+        tensorC: C matrix TV tensor
+        tensorA: A matrix TV tensor
+        tensorB: B matrix TV tensor
+        num_threads_C, num_values_C: Thread and value counts for C
+        num_threads_A, num_values_A: Thread and value counts for A
+        num_threads_B, num_values_B: Thread and value counts for B
+
+    Returns:
+        Tuple of three arrays with coordinates for C, A, B
+    """
+    coords_C = np.zeros((num_threads_C, num_values_C, 2), dtype=np.int32)
+    coords_A = np.zeros((num_threads_A, num_values_A, 2), dtype=np.int32)
+    coords_B = np.zeros((num_threads_B, num_values_B, 2), dtype=np.int32)
+
+    for tid in range_constexpr(num_threads_C):
+        for vid in range_constexpr(num_values_C):
+            m, n = tensorC[tid, vid]
+            coords_C[tid, vid, 0] = m
+            coords_C[tid, vid, 1] = n
+
+    for tid in range_constexpr(num_threads_A):
+        for vid in range_constexpr(num_values_A):
+            m, k = tensorA[tid, vid]
+            coords_A[tid, vid, 0] = m
+            coords_A[tid, vid, 1] = k
+
+    for tid in range_constexpr(num_threads_B):
+        for vid in range_constexpr(num_values_B):
+            n, k = tensorB[tid, vid]
+            coords_B[tid, vid, 0] = n
+            coords_B[tid, vid, 1] = k
+
+    return coords_C, coords_A, coords_B
+
+
+def _create_mma_layout_svg(tiled_mma, tile_mnk):
+    """
+    Create SVG visualization of MMA layout showing A, B, and C matrices.
+
+    Layout:
+        B
+    A   C
+
+    Where C = A × B for matrix multiplication.
+
+    Args:
+        tiled_mma: TiledMMA object
+        tile_mnk: Tuple of (M, N, K) tile dimensions
+
+    Returns:
+        svgwrite.Drawing object
+    """
+    M, N, K = tile_mnk
+
+    # Extract TV layouts from TiledMMA
+    layoutC_TV = tiled_mma.tv_layout_C_tiled
+    layoutA_TV = tiled_mma.tv_layout_A_tiled
+    layoutB_TV = tiled_mma.tv_layout_B_tiled
+
+    # Create identity tensors and compose
+    refC = make_identity_tensor((M, N))
+    tensorC_TV = cute.composition(refC, layoutC_TV)
+
+    refA = make_identity_tensor((M, K))
+    tensorA_TV = cute.composition(refA, layoutA_TV)
+
+    refB = make_identity_tensor((N, K))
+    tensorB_TV = cute.composition(refB, layoutB_TV)
+
+    # Handle potential extra dimensions
+    tensorC = tensorC_TV[:, :, 0] if hasattr(tensorC_TV, 'ndim') and tensorC_TV.ndim > 2 else tensorC_TV
+    tensorA = tensorA_TV[:, :, 0] if hasattr(tensorA_TV, 'ndim') and tensorA_TV.ndim > 2 else tensorA_TV
+    tensorB = tensorB_TV[:, :, 0] if hasattr(tensorB_TV, 'ndim') and tensorB_TV.ndim > 2 else tensorB_TV
+
+    cell_size = 20
+
+    # SVG dimensions
+    page_width = (K + N + 2) * cell_size
+    page_height = (K + M + 2) * cell_size
+
+    dwg = svgwrite.Drawing(size=(page_width, page_height))
+
+    # Track filled cells to avoid duplicates
+    import numpy as np
+    filled = np.zeros((M, N, K), dtype=bool)
+
+    # Get number of threads and values for each tensor
+    num_threads_C = size(tensorC, mode=[0])
+    num_values_C = size(tensorC, mode=[1])
+    num_threads_A = size(tensorA, mode=[0])
+    num_values_A = size(tensorA, mode=[1])
+    num_threads_B = size(tensorB, mode=[0])
+    num_values_B = size(tensorB, mode=[1])
+
+    # Extract coordinates from tensors (this happens in JIT context)
+    coords_C, coords_A, coords_B = _extract_mma_coords(
+        tensorC, tensorA, tensorB,
+        num_threads_C, num_values_C,
+        num_threads_A, num_values_A,
+        num_threads_B, num_values_B
+    )
+
+    # 8 RGB-255 pastel colors (matching TV layout)
+    rgb_255_colors = [
+        (175, 175, 255),
+        (175, 255, 175),
+        (255, 255, 175),
+        (255, 175, 175),
+        (255, 175, 255),
+        (175, 255, 255),
+        (210, 210, 210),
+        (160, 160, 255),
+    ]
+
+    # --- Draw C (M×N at bottom-right) ---
+    for tid in range(num_threads_C):
+        for vid in range(num_values_C):
+            m, n = int(coords_C[tid, vid, 0]), int(coords_C[tid, vid, 1])
+            if m < M and n < N and not filled[m, n, 0]:
+                filled[m, n, 0] = True
+
+                x = (n + K + 2) * cell_size
+                y = (m + K + 2) * cell_size
+
+                color = rgb_255_colors[tid % len(rgb_255_colors)]
+
+                rect = dwg.rect(
+                    insert=(x, y),
+                    size=(cell_size, cell_size),
+                    fill=svgwrite.rgb(*color, mode="RGB"),
+                    stroke='black'
+                )
+                dwg.add(rect)
+
+                # Thread ID
+                text1 = dwg.text(
+                    f'T{tid}',
+                    insert=(x + cell_size/2, y + cell_size/4),
+                    text_anchor='middle',
+                    alignment_baseline='central',
+                    font_size='8px'
+                )
+                dwg.add(text1)
+
+                # Value ID
+                text2 = dwg.text(
+                    f'V{vid}',
+                    insert=(x + cell_size/2, y + 3*cell_size/4),
+                    text_anchor='middle',
+                    alignment_baseline='central',
+                    font_size='8px'
+                )
+                dwg.add(text2)
+
+    # Reset filled tracker
+    filled.fill(False)
+
+    # --- Draw A (M×K at left) ---
+    for tid in range(num_threads_A):
+        for vid in range(num_values_A):
+            m, k = int(coords_A[tid, vid, 0]), int(coords_A[tid, vid, 1])
+            if m < M and k < K and not filled[m, 0, k]:
+                filled[m, 0, k] = True
+
+                x = (k + 1) * cell_size
+                y = (m + K + 2) * cell_size
+
+                color = rgb_255_colors[tid % len(rgb_255_colors)]
+
+                rect = dwg.rect(
+                    insert=(x, y),
+                    size=(cell_size, cell_size),
+                    fill=svgwrite.rgb(*color, mode="RGB"),
+                    stroke='black'
+                )
+                dwg.add(rect)
+
+                # Thread ID
+                text1 = dwg.text(
+                    f'T{tid}',
+                    insert=(x + cell_size/2, y + cell_size/4),
+                    text_anchor='middle',
+                    alignment_baseline='central',
+                    font_size='8px'
+                )
+                dwg.add(text1)
+
+                # Value ID
+                text2 = dwg.text(
+                    f'V{vid}',
+                    insert=(x + cell_size/2, y + 3*cell_size/4),
+                    text_anchor='middle',
+                    alignment_baseline='central',
+                    font_size='8px'
+                )
+                dwg.add(text2)
+
+    # Reset filled tracker
+    filled.fill(False)
+
+    # --- Draw B (N×K at top, shown as K×N transposed) ---
+    for tid in range(num_threads_B):
+        for vid in range(num_values_B):
+            n, k = int(coords_B[tid, vid, 0]), int(coords_B[tid, vid, 1])
+            if n < N and k < K and not filled[0, n, k]:
+                filled[0, n, k] = True
+
+                x = (n + K + 2) * cell_size
+                y = (k + 1) * cell_size
+
+                color = rgb_255_colors[tid % len(rgb_255_colors)]
+
+                rect = dwg.rect(
+                    insert=(x, y),
+                    size=(cell_size, cell_size),
+                    fill=svgwrite.rgb(*color, mode="RGB"),
+                    stroke='black'
+                )
+                dwg.add(rect)
+
+                # Thread ID
+                text1 = dwg.text(
+                    f'T{tid}',
+                    insert=(x + cell_size/2, y + cell_size/4),
+                    text_anchor='middle',
+                    alignment_baseline='central',
+                    font_size='8px'
+                )
+                dwg.add(text1)
+
+                # Value ID
+                text2 = dwg.text(
+                    f'V{vid}',
+                    insert=(x + cell_size/2, y + 3*cell_size/4),
+                    text_anchor='middle',
+                    alignment_baseline='central',
+                    font_size='8px'
+                )
+                dwg.add(text2)
+
+    return dwg
+
+
+def render_mma_layout_svg(tiled_mma, tile_mnk, output_file):
+    """
+    Render a TiledMMA layout as an SVG showing A, B, and C matrix thread mappings.
+
+    Alias for render_tiled_mma_svg().
+
+    Args:
+        tiled_mma: CuTe TiledMMA object
+        tile_mnk: Tuple (M, N, K) tile dimensions
+        output_file: Output SVG file path
+    """
+    dwg = _create_mma_layout_svg(tiled_mma, tile_mnk)
+    dwg.saveas(output_file)
+
+
+def display_mma_layout(tiled_mma, tile_mnk):
+    """
+    Display a TiledMMA layout directly in Jupyter notebooks.
+
+    Alias for display_tiled_mma().
+
+    Args:
+        tiled_mma: CuTe TiledMMA object
+        tile_mnk: Tuple (M, N, K) tile dimensions
+
+    Returns:
+        IPython display object
+    """
+    from IPython.display import SVG, display
+    dwg = _create_mma_layout_svg(tiled_mma, tile_mnk)
+    return SVG(dwg.tostring())
+
+
+###################################
+# High-Level TiledMMA Visualization API
+###################################
+
+
+def render_tiled_mma_svg(tiled_mma, tile_mnk, output_path):
+    """
+    Render a TiledMMA visualization to SVG file.
+
+    Python equivalent of C++ print_latex(TiledMMA).
+
+    This high-level function automatically extracts A, B, and C thread-value
+    layouts from a TiledMMA object and renders them in the standard layout:
+        B
+    A   C
+
+    Args:
+        tiled_mma: CuTe TiledMMA object created with make_tiled_mma()
+        tile_mnk: Tile shape as (M, N, K) tuple
+        output_path: Path to save the SVG file
+
+    Example:
+        >>> from cutlass import cute, Float32
+        >>> from cute_viz import render_tiled_mma_svg
+        >>>
+        >>> # Create MMA operation and tiled MMA
+        >>> op = cute.nvgpu.MmaUniversalOp(Float32)
+        >>> atoms_layout = cute.make_layout((16, 1, 1), stride=(1, 0, 0))
+        >>> tiled_mma = cute.make_tiled_mma(op, atoms_layout)
+        >>>
+        >>> # Render in one call!
+        >>> render_tiled_mma_svg(tiled_mma, (8, 8, 8), "mma_layout.svg")
+    """
+    dwg = _create_mma_layout_svg(tiled_mma, tile_mnk)
+    dwg.saveas(output_path)
+
+
+def display_tiled_mma(tiled_mma, tile_mnk):
+    """
+    Display a TiledMMA visualization in Jupyter notebook.
+
+    Python equivalent of C++ print_latex(TiledMMA) for interactive notebooks.
+
+    Args:
+        tiled_mma: CuTe TiledMMA object created with make_tiled_mma()
+        tile_mnk: Tile shape as (M, N, K) tuple
+
+    Returns:
+        IPython.display.SVG object for inline display
+
+    Example:
+        >>> from cutlass import cute, Float32
+        >>> from cute_viz import display_tiled_mma
+        >>>
+        >>> # Create MMA operation and tiled MMA
+        >>> op = cute.nvgpu.MmaUniversalOp(Float32)
+        >>> atoms_layout = cute.make_layout((16, 1, 1), stride=(1, 0, 0))
+        >>> tiled_mma = cute.make_tiled_mma(op, atoms_layout)
+        >>>
+        >>> # Display inline in Jupyter
+        >>> display_tiled_mma(tiled_mma, (8, 8, 8))
+    """
+    from IPython.display import SVG
+    dwg = _create_mma_layout_svg(tiled_mma, tile_mnk)
+    return SVG(dwg.tostring())

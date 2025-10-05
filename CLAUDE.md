@@ -12,15 +12,16 @@ The project uses a standard Python package structure with pyproject.toml configu
 
 - **Install in development mode**: `pip install -e .`
 - **Install from GitHub**: `pip install git+https://github.com/NTT123/cute-viz.git`
-- **Run examples**: `python examples/layout_example.py` or `python examples/tv_layout_example.py` or `python examples/swizzle_layout_example.py` or `python examples/copy_layout_example.py`
+- **Run examples**: `python examples/layout_example.py` or `python examples/mma_atom_example.py`
 
 ## Project Structure
 
 - `cute_viz/` - Main package directory
   - `__init__.py` - Package initialization, exports public API:
-    - Visualization: `render_layout_svg`, `render_tv_layout_svg`, `render_swizzle_layout_svg`, `render_copy_layout_svg`, `display_svg`, `display_layout`, `display_tv_layout`, `display_swizzle_layout`, `display_copy_layout`
+    - Visualization: `render_layout_svg`, `render_tv_layout_svg`, `render_swizzle_layout_svg`, `render_copy_layout_svg`, `render_tiled_copy_svg`, `render_mma_layout_svg`, `render_tiled_mma_svg`
+    - Display: `display_svg`, `display_layout`, `display_tv_layout`, `display_swizzle_layout`, `display_copy_layout`, `display_tiled_copy`, `display_mma_layout`, `display_tiled_mma`
     - Utilities: `tidfrg_S`, `tidfrg_D`
-  - `core.py` - Core visualization functions with internal helpers `_create_layout_svg()`, `_create_tv_layout_svg()`, `_create_swizzle_layout_svg()`, `_create_copy_layout_svg()`, and utility functions `tidfrg_S()`, `tidfrg_D()`
+  - `core.py` - Core visualization functions with internal helpers and utility functions
 - `examples/` - Runnable example scripts demonstrating package usage
 - `pyproject.toml` - Project configuration with dependencies
 - `README.md` - Package documentation with usage examples
@@ -208,3 +209,87 @@ The low-level functions work by:
 - ✅ One-line visualization of any TiledCopy object
 - ✅ Automatically extracts source and destination thread-value mappings
 - ✅ Works with all copy atoms (CopyUniversalOp, cp.async, TMA, etc.)
+
+### TiledMMA Visualization API
+
+**High-Level API (Recommended):**
+
+Python equivalent of C++ `print_latex(TiledMMA)` - visualize a TiledMMA with a single function call:
+
+```python
+from cutlass import cute, Float16, Float32
+from cute_viz import render_tiled_mma_svg
+
+@cute.jit
+def main():
+    tile_mnk = (16, 8, 8)  # M, N, K dimensions
+
+    # Create MMA operation for Float16 Tensor Cores (SM80+)
+    op = cute.nvgpu.warp.MmaF16BF16Op(
+        Float16,      # Input A/B type (FP16)
+        Float32,      # Accumulator type (FP32)
+        (16, 8, 8)    # MMA shape: M×N×K
+    )
+
+    # Create the TiledMMA (operation defines its own thread layout)
+    tiled_mma = cute.make_tiled_mma(op)
+
+    # Visualize with one function call!
+    render_tiled_mma_svg(tiled_mma, tile_mnk, "mma_layout.svg")
+```
+
+For Jupyter notebooks, use `display_tiled_mma(tiled_mma, tile_mnk)`.
+
+**Low-Level API (Advanced):**
+
+The high-level API (`render_tiled_mma_svg` and `display_tiled_mma`) handles everything automatically. For advanced use cases, you can access the TiledMMA properties directly:
+
+- `tiled_mma.tv_layout_C_tiled` - Thread-value layout for C matrix
+- `tiled_mma.tv_layout_A_tiled` - Thread-value layout for A matrix
+- `tiled_mma.tv_layout_B_tiled` - Thread-value layout for B matrix
+
+**C++ API Reference:**
+
+In C++ CuTe, `TiledMMA` provides these methods:
+- `get_layoutC_TV()` - Thread-value layout for C matrix (M×N)
+- `get_layoutA_TV()` - Thread-value layout for A matrix (M×K)
+- `get_layoutB_TV()` - Thread-value layout for B matrix (N×K)
+- `print_latex(TiledMMA)` - Renders TiledMMA visualization
+
+**Python Property Names:**
+
+In Python CuTe DSL, use properties instead of methods:
+- `tiled_mma.tv_layout_C_tiled` (NOT `get_layoutC_TV()`)
+- `tiled_mma.tv_layout_A_tiled` (NOT `get_layoutA_TV()`)
+- `tiled_mma.tv_layout_B_tiled` (NOT `get_layoutB_TV()`)
+
+**Visualization Layout:**
+
+The MMA visualization shows the standard matrix multiplication layout:
+```
+    B (K×N, transposed)
+A   C
+```
+
+Where C = A × B with dimensions:
+- A: M×K (left)
+- B: N×K shown transposed as K×N (top)
+- C: M×N (bottom-right)
+
+Colors indicate thread IDs, numbers show value IDs within each thread.
+
+**Implementation Details:**
+
+The high-level API (`render_tiled_mma_svg`) automatically:
+1. Extracts TV layouts using `tv_layout_A_tiled`, `tv_layout_B_tiled`, `tv_layout_C_tiled` properties
+2. Creates identity tensors for each matrix dimension
+3. Composes layouts with identity tensors to get coordinate mappings
+4. Handles multi-dimensional tensor slicing (equivalent to C++ `[:, :, 0]`)
+5. Renders the three-panel MMA layout visualization
+
+**Benefits:**
+- ✅ API parity with C++ CuTe `print_latex(TiledMMA)`
+- ✅ One-line visualization of any TiledMMA object
+- ✅ Automatically extracts A, B, C thread-value mappings
+- ✅ Shows matrix multiplication structure visually
+- ✅ Works with all MMA atoms (MmaUniversalOp, Tensor Core ops, etc.)
