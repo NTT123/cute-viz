@@ -222,17 +222,14 @@ from cute_viz import render_tiled_mma_svg
 
 @cute.jit
 def main():
-    tile_mnk = (16, 8, 8)  # M, N, K dimensions
+    # Tile dimensions: M×N×K = 16×8×8 (SM80+ Tensor Core)
+    tile_mnk = (16, 8, 8)
 
-    # Create MMA operation for Float16 Tensor Cores (SM80+)
-    op = cute.nvgpu.warp.MmaF16BF16Op(
-        Float16,      # Input A/B type (FP16)
-        Float32,      # Accumulator type (FP32)
-        (16, 8, 8)    # MMA shape: M×N×K
-    )
+    # Create MMA atom using native SM80+ Tensor Core instruction
+    mma_atom = cute.nvgpu.warp.MmaF16BF16Op(Float16, Float32, tile_mnk)
 
-    # Create the TiledMMA (operation defines its own thread layout)
-    tiled_mma = cute.make_tiled_mma(op)
+    # Create TiledMMA
+    tiled_mma = cute.make_tiled_mma(mma_atom)
 
     # Visualize with one function call!
     render_tiled_mma_svg(tiled_mma, tile_mnk, "mma_layout.svg")
@@ -286,6 +283,14 @@ The high-level API (`render_tiled_mma_svg`) automatically:
 3. Composes layouts with identity tensors to get coordinate mappings
 4. Handles multi-dimensional tensor slicing (equivalent to C++ `[:, :, 0]`)
 5. Renders the three-panel MMA layout visualization
+
+**Supported MMA Configurations:**
+
+The Python CUTLASS DSL supports native MMA operations:
+- **SM80+ (A100/H100)**: Native `cute.nvgpu.warp.MmaF16BF16Op` supports (16,8,8) and (16,8,16)
+- **SM90+ (Hopper)**: Native `cute.nvgpu.tcgen05.MmaF16BF16Op` and warpgroup operations
+
+The package example demonstrates SM80 16×8×8 using native Tensor Core operations.
 
 **Benefits:**
 - ✅ API parity with C++ CuTe `print_latex(TiledMMA)`

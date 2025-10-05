@@ -34,7 +34,7 @@ main()
 | [**Swizzle Layout**](examples/swizzle_layout_example.py) | ![Swizzle Layout](assets/swizzle_layout.svg) |
 | [**Thread-Value Layout**](examples/tv_layout_example.py) | ![TV Layout](assets/tv_layout.svg) |
 | [**LDMATRIX Copy Atom**](examples/ldmatrix_copy_example.py) | ![LDMATRIX Layout](assets/ldmatrix_copy.svg) |
-| [**MMA Atom**](examples/mma_atom_example.py) | ![MMA Layout](assets/mma_layout.svg) |
+| [**MMA Atom (SM80 16×8×8)**](examples/mma_atom_example.py) | ![MMA Layout](assets/mma_layout.svg) |
 
 ## Credits
 

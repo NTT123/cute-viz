@@ -902,16 +902,16 @@ def _create_mma_layout_svg(tiled_mma, tile_mnk):
         num_threads_B, num_values_B
     )
 
-    # 8 RGB-255 pastel colors (matching TV layout)
+    # Colors (matching C++ SVGColor_TV from print_svg.hpp)
     rgb_255_colors = [
         (175, 175, 255),
         (175, 255, 175),
         (255, 255, 175),
         (255, 175, 175),
-        (255, 175, 255),
-        (175, 255, 255),
-        (210, 210, 210),
-        (160, 160, 255),
+        (210, 210, 255),
+        (210, 255, 210),
+        (255, 255, 210),
+        (255, 210, 210),
     ]
 
     # --- Draw C (M×N at bottom-right) ---
@@ -1055,6 +1055,139 @@ def render_mma_layout_svg(tiled_mma, tile_mnk, output_file):
         output_file: Output SVG file path
     """
     dwg = _create_mma_layout_svg(tiled_mma, tile_mnk)
+    dwg.saveas(output_file)
+
+
+def render_mma_from_layouts(layoutC, layoutA, layoutB, tile_mnk, output_file):
+    """
+    Render MMA layout from manually constructed TV layouts.
+
+    Low-level API for custom layout visualization.
+
+    Args:
+        layoutC: C matrix TV layout (M×N)
+        layoutA: A matrix TV layout (M×K)
+        layoutB: B matrix TV layout (N×K)
+        tile_mnk: Tuple (M, N, K) tile dimensions
+        output_file: Output SVG file path
+    """
+    M, N, K = tile_mnk
+
+    # Create identity tensors and compose
+    refC = make_identity_tensor((M, N))
+    tensorC_TV = cute.composition(refC, layoutC)
+
+    refA = make_identity_tensor((M, K))
+    tensorA_TV = cute.composition(refA, layoutA)
+
+    refB = make_identity_tensor((N, K))
+    tensorB_TV = cute.composition(refB, layoutB)
+
+    # Handle potential extra dimensions
+    tensorC = tensorC_TV[:, :, 0] if hasattr(tensorC_TV, 'ndim') and tensorC_TV.ndim > 2 else tensorC_TV
+    tensorA = tensorA_TV[:, :, 0] if hasattr(tensorA_TV, 'ndim') and tensorA_TV.ndim > 2 else tensorA_TV
+    tensorB = tensorB_TV[:, :, 0] if hasattr(tensorB_TV, 'ndim') and tensorB_TV.ndim > 2 else tensorB_TV
+
+    # Create SVG using the same internal logic
+    cell_size = 20
+    page_width = (K + N + 2) * cell_size
+    page_height = (K + M + 2) * cell_size
+
+    dwg = svgwrite.Drawing(size=(page_width, page_height))
+
+    # Track filled cells
+    import numpy as np
+    filled = np.zeros((M, N, K), dtype=bool)
+
+    # Get sizes
+    num_threads_C = size(tensorC, mode=[0])
+    num_values_C = size(tensorC, mode=[1])
+    num_threads_A = size(tensorA, mode=[0])
+    num_values_A = size(tensorA, mode=[1])
+    num_threads_B = size(tensorB, mode=[0])
+    num_values_B = size(tensorB, mode=[1])
+
+    # Extract coordinates
+    coords_C, coords_A, coords_B = _extract_mma_coords(
+        tensorC, tensorA, tensorB,
+        num_threads_C, num_values_C,
+        num_threads_A, num_values_A,
+        num_threads_B, num_values_B
+    )
+
+    # Colors (matching C++ SVGColor_TV from print_svg.hpp)
+    rgb_255_colors = [
+        (175, 175, 255),
+        (175, 255, 175),
+        (255, 255, 175),
+        (255, 175, 175),
+        (210, 210, 255),
+        (210, 255, 210),
+        (255, 255, 210),
+        (255, 210, 210),
+    ]
+
+    # Draw C
+    for tid in range(num_threads_C):
+        for vid in range(num_values_C):
+            m, n = int(coords_C[tid, vid, 0]), int(coords_C[tid, vid, 1])
+            if m < M and n < N and not filled[m, n, 0]:
+                filled[m, n, 0] = True
+                x = (n + K + 2) * cell_size
+                y = (m + K + 2) * cell_size
+                color = rgb_255_colors[tid % len(rgb_255_colors)]
+                rect = dwg.rect(insert=(x, y), size=(cell_size, cell_size),
+                               fill=svgwrite.rgb(*color, mode="RGB"), stroke='black')
+                dwg.add(rect)
+                text1 = dwg.text(f'T{tid}', insert=(x + cell_size/2, y + cell_size/4),
+                                text_anchor='middle', alignment_baseline='central', font_size='8px')
+                dwg.add(text1)
+                text2 = dwg.text(f'V{vid}', insert=(x + cell_size/2, y + 3*cell_size/4),
+                                text_anchor='middle', alignment_baseline='central', font_size='8px')
+                dwg.add(text2)
+
+    filled.fill(False)
+
+    # Draw A
+    for tid in range(num_threads_A):
+        for vid in range(num_values_A):
+            m, k = int(coords_A[tid, vid, 0]), int(coords_A[tid, vid, 1])
+            if m < M and k < K and not filled[m, 0, k]:
+                filled[m, 0, k] = True
+                x = (k + 1) * cell_size
+                y = (m + K + 2) * cell_size
+                color = rgb_255_colors[tid % len(rgb_255_colors)]
+                rect = dwg.rect(insert=(x, y), size=(cell_size, cell_size),
+                               fill=svgwrite.rgb(*color, mode="RGB"), stroke='black')
+                dwg.add(rect)
+                text1 = dwg.text(f'T{tid}', insert=(x + cell_size/2, y + cell_size/4),
+                                text_anchor='middle', alignment_baseline='central', font_size='8px')
+                dwg.add(text1)
+                text2 = dwg.text(f'V{vid}', insert=(x + cell_size/2, y + 3*cell_size/4),
+                                text_anchor='middle', alignment_baseline='central', font_size='8px')
+                dwg.add(text2)
+
+    filled.fill(False)
+
+    # Draw B
+    for tid in range(num_threads_B):
+        for vid in range(num_values_B):
+            n, k = int(coords_B[tid, vid, 0]), int(coords_B[tid, vid, 1])
+            if n < N and k < K and not filled[0, n, k]:
+                filled[0, n, k] = True
+                x = (n + K + 2) * cell_size
+                y = (k + 1) * cell_size
+                color = rgb_255_colors[tid % len(rgb_255_colors)]
+                rect = dwg.rect(insert=(x, y), size=(cell_size, cell_size),
+                               fill=svgwrite.rgb(*color, mode="RGB"), stroke='black')
+                dwg.add(rect)
+                text1 = dwg.text(f'T{tid}', insert=(x + cell_size/2, y + cell_size/4),
+                                text_anchor='middle', alignment_baseline='central', font_size='8px')
+                dwg.add(text1)
+                text2 = dwg.text(f'V{vid}', insert=(x + cell_size/2, y + 3*cell_size/4),
+                                text_anchor='middle', alignment_baseline='central', font_size='8px')
+                dwg.add(text2)
+
     dwg.saveas(output_file)
 
 
