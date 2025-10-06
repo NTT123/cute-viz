@@ -588,7 +588,7 @@ def _create_copy_layout_svg(layout_s, layout_d, tile_mn):
     )
 
     # Horizontal gap between source and destination grids
-    gap = 3 * cell_size
+    gap = 1 * cell_size
 
     # Add margin for axis labels (1 cell on left for S, 1 cell on top, 1 cell on right for D)
     label_margin = cell_size
@@ -1025,7 +1025,7 @@ def _create_mma_layout_svg(tiled_mma, tile_mnk):
     cell_size = 20
 
     # Add margin for axis labels
-    label_margin = cell_size
+    label_margin = 0
 
     # SVG dimensions
     page_width = (K + N + 2) * cell_size + label_margin

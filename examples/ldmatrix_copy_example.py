@@ -80,9 +80,6 @@ def main():
     print("  • Destination layout: Register arrangement for Tensor Cores")
     print("  • Colors indicate which thread owns each element")
     print("  • The pattern optimizes for coalesced memory access")
-    print()
-    print("Note: The actual ldmatrix instruction performs complex")
-    print("      permutations under the hood for optimal performance.")
 
 
 if __name__ == "__main__":
