@@ -63,7 +63,7 @@ def _extract_layout_indices(layout):
     return _extract_layout_indices_universal(layout, total_size)
 
 
-def _create_layout_svg(layout):
+def _create_layout_svg(layout, flatten_hierarchical=True):
     """
     Universal function to create SVG Drawing for any CuTe layout.
     
@@ -74,6 +74,8 @@ def _create_layout_svg(layout):
 
     Args:
         layout: CuTe layout object (any rank, any nesting)
+        flatten_hierarchical: If True (default), hierarchical layouts are rendered as flat grids.
+                             If False, hierarchical layouts are rendered with tile boundaries.
 
     Returns:
         svgwrite.Drawing object
@@ -150,14 +152,14 @@ def _create_layout_svg(layout):
         return dwg
     
     elif layout_rank == 2:
-        # Check if this is a hierarchical 2D layout
-        if _is_hierarchical_2d(layout):
+        # Check if this is a hierarchical 2D layout and user wants nested visualization
+        if not flatten_hierarchical and _is_hierarchical_2d(layout):
             # Use special tiled visualization for hierarchical layouts
             dwg = _create_hierarchical_2d_layout_svg(layout)
             if dwg is not None:
                 return dwg
         
-        # Regular 2D layout: grid
+        # Regular 2D layout: grid (or flattened hierarchical)
         M, N = int(size(layout[0])), int(size(layout[1]))
         # Reshape using column-major (Fortran) order since idx2crd uses column-major
         indices = indices_flat.reshape(M, N, order='F')
@@ -907,7 +909,7 @@ def _create_tv_layout_svg(layout, tile_mn):
     return dwg
 
 
-def render_layout_svg(layout, output_file):
+def render_layout_svg(layout, output_file, flatten_hierarchical=True):
     """
     Render a CuTe layout as an SVG grid with color-coded cells.
     
@@ -915,13 +917,15 @@ def render_layout_svg(layout, output_file):
     - 1D: e.g., 8:1 - horizontal bar
     - 2D: e.g., (4,8):(1,4) - 2D grid
     - 3D+: e.g., (2,4,8):(1,8,32) - visualized as horizontal slices
-    - Hierarchical: e.g., (2,(2,2)):(4,(2,1)) - treated by flattening
+    - Hierarchical: e.g., (2,(2,2)):(4,(2,1)) - flat by default, or with tile boundaries
 
     Args:
         layout: CuTe layout object (any rank, any structure)
         output_file: Output SVG file path
+        flatten_hierarchical: If True (default), hierarchical layouts are rendered as flat grids.
+                             If False, hierarchical layouts are rendered with tile boundaries.
     """
-    dwg = _create_layout_svg(layout)
+    dwg = _create_layout_svg(layout, flatten_hierarchical=flatten_hierarchical)
     dwg.saveas(output_file)
 
 
@@ -956,7 +960,7 @@ def display_svg(file_path):
     return display(SVG(svg_content))
 
 
-def display_layout(layout):
+def display_layout(layout, flatten_hierarchical=True):
     """
     Display a CuTe layout directly in Jupyter notebooks without writing to disk.
     
@@ -964,17 +968,19 @@ def display_layout(layout):
     - 1D: e.g., 8:1 - horizontal bar
     - 2D: e.g., (4,8):(1,4) - 2D grid
     - 3D+: e.g., (2,4,8):(1,8,32) - visualized as horizontal slices
-    - Hierarchical: e.g., (2,(2,2)):(4,(2,1)) - treated by flattening
+    - Hierarchical: e.g., (2,(2,2)):(4,(2,1)) - flat by default, or with tile boundaries
 
     Args:
         layout: CuTe layout object (any rank, any structure)
+        flatten_hierarchical: If True (default), hierarchical layouts are rendered as flat grids.
+                             If False, hierarchical layouts are rendered with tile boundaries.
 
     Returns:
         IPython display object
     """
     from IPython.display import SVG, display
 
-    dwg = _create_layout_svg(layout)
+    dwg = _create_layout_svg(layout, flatten_hierarchical=flatten_hierarchical)
     svg_string = dwg.tostring()
     return display(SVG(svg_string))
 

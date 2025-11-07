@@ -3,6 +3,12 @@ Example demonstrating hierarchical layout visualization.
 
 This example creates and visualizes various hierarchical CuTe layouts,
 including layouts with different nesting patterns.
+
+For hierarchical layouts, two visualization modes are available:
+1. Flattened (flatten_hierarchical=True, default): Shows a simple 2D grid
+2. Nested (flatten_hierarchical=False): Shows tile boundaries with hierarchical structure
+   - Tile boundaries marked with thick blue lines
+   - Outer (tile) indices in blue, inner (element) indices in black
 """
 
 from cutlass import cute, range_constexpr
@@ -51,8 +57,10 @@ def demonstrate_hierarchical_layouts():
                 print(f"  ({i},({j},{k}))->{idx}", end="")
             print()
     
-    render_layout_svg(layout2, "assets/hierarchical_layout_2_2x2.svg")
-    print("✓ Saved to assets/hierarchical_layout_2_2x2.svg\n")
+    render_layout_svg(layout2, "assets/hierarchical_layout_2_2x2_flat.svg", flatten_hierarchical=True)
+    print("✓ Saved flattened to assets/hierarchical_layout_2_2x2_flat.svg")
+    render_layout_svg(layout2, "assets/hierarchical_layout_2_2x2_nested.svg", flatten_hierarchical=False)
+    print("✓ Saved nested to assets/hierarchical_layout_2_2x2_nested.svg\n")
     
     print("=" * 60)
     print("EXAMPLE 3: Column-major layout (2, 4):(1, 2)")
@@ -89,13 +97,15 @@ def demonstrate_hierarchical_layouts():
                 print(f"(({i},{j}),{k})->{idx}", end="  ")
         print()
     
-    render_layout_svg(layout4, "assets/hierarchical_layout_2x2_2.svg")
-    print("✓ Saved to assets/hierarchical_layout_2x2_2.svg\n")
+    render_layout_svg(layout4, "assets/hierarchical_layout_2x2_2_flat.svg", flatten_hierarchical=True)
+    print("✓ Saved flattened to assets/hierarchical_layout_2x2_2_flat.svg")
+    render_layout_svg(layout4, "assets/hierarchical_layout_2x2_2_nested.svg", flatten_hierarchical=False)
+    print("✓ Saved nested to assets/hierarchical_layout_2x2_2_nested.svg\n")
     
     print("=" * 60)
-    print("EXAMPLE 5: Hierarchical layout ((2,2), (3, 4))")
+    print("EXAMPLE 5: Hierarchical layout ((2,2), (3, 4)) with non-linear stride")
     print("=" * 60)
-    layout5 = cute.make_layout(((2, 2), (3, 4)))
+    layout5 = cute.make_layout(((2, 2), (3, 4)), stride=((1, 6), (2, 12)))
     print(f"Layout: {layout5}")
     print(f"Rank: {cute.rank(layout5)}")
     print(f"Size: {cute.size(layout5)}")
@@ -103,6 +113,7 @@ def demonstrate_hierarchical_layouts():
     print(f"Depth mode 1: {cute.depth(layout5[1])}")
     
     print("\nHierarchical structure: 3×4 grid of tiles, each tile is 2×2")
+    print("Non-linear stride: ((1, 6), (2, 12))")
     print("\nMapping (first few elements):")
     for i in range_constexpr(2):
         for j in range_constexpr(2):
@@ -114,8 +125,10 @@ def demonstrate_hierarchical_layouts():
                     print(f"(({i},{j}),({k},{l}))->{idx:2d}", end=" ")
                 print()
     
-    render_layout_svg(layout5, "assets/hierarchical_layout_2x2_3x4.svg")
-    print("✓ Saved to assets/hierarchical_layout_2x2_3x4.svg\n")
+    render_layout_svg(layout5, "assets/hierarchical_layout_2x2_3x4_flat.svg", flatten_hierarchical=True)
+    print("✓ Saved flattened to assets/hierarchical_layout_2x2_3x4_flat.svg")
+    render_layout_svg(layout5, "assets/hierarchical_layout_2x2_3x4_nested.svg", flatten_hierarchical=False)
+    print("✓ Saved nested to assets/hierarchical_layout_2x2_3x4_nested.svg")
     
     print("=" * 60)
     print("All examples completed successfully!")
