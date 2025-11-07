@@ -5,37 +5,75 @@ Core visualization functions for CuTe layouts.
 import numpy as np
 import svgwrite
 from cutlass import cute, range_constexpr
-from cutlass.cute import size, rank, make_identity_tensor
+from cutlass.cute import size, rank, make_identity_tensor, idx2crd, depth
 
 
 @cute.jit
-def _extract_layout_indices(layout, M, N):
+def _extract_layout_indices_universal(layout, total_size):
     """
-    Extract indices from a layout using compile-time loops.
+    Universal function to extract indices from any layout using idx2crd.
+    
+    This works for layouts of any rank (1D, 2D, 3D, 4D, ...) and 
+    any nesting structure (hierarchical layouts like (2, (2, 2))).
+    
+    The approach:
+    1. Iterate through all linear indices 0 to total_size-1
+    2. Use idx2crd to convert each linear index to a coordinate using layout.shape
+    3. Apply the layout to that coordinate to get the output index
 
     Args:
-        layout: CuTe layout object
-        M: Number of rows (must be compile-time constant)
-        N: Number of columns (must be compile-time constant)
+        layout: CuTe layout object (any rank, any nesting)
+        total_size: Total number of elements (must be compile-time constant)
 
     Returns:
-        2D numpy array of indices
+        1D numpy array of indices
     """
-    indices = np.zeros((M, N), dtype=np.int32)
+    indices = np.zeros(total_size, dtype=np.int32)
 
-    for i in range_constexpr(M):
-        for j in range_constexpr(N):
-            indices[i, j] = layout((i, j))
+    for i in range_constexpr(total_size):
+        # Convert linear index to coordinate using the layout's shape
+        coord = idx2crd(i, layout.shape)
+        # Apply layout to coordinate to get output index
+        indices[i] = layout(coord)
 
     return indices
 
 
-def _create_layout_svg(layout):
+def _extract_layout_indices(layout):
     """
-    Internal helper to create SVG Drawing object for a layout.
+    Universal function to extract indices from a layout of any rank and structure.
+    
+    Works for:
+    - Simple 1D layouts: 8:1
+    - Simple 2D layouts: (4,8):(1,4)
+    - Simple 3D+ layouts: (2,4,8):(1,8,32)
+    - Hierarchical/nested layouts: (2,(2,2)):(4,(2,1))
+    - Any combination of the above
 
     Args:
-        layout: CuTe layout object
+        layout: CuTe layout object (any rank, any nesting)
+
+    Returns:
+        1D numpy array of indices (flattened)
+    """
+    # Get total size of the layout and convert to Python int
+    total_size = int(size(layout))
+    
+    # Extract all indices using universal extraction
+    return _extract_layout_indices_universal(layout, total_size)
+
+
+def _create_layout_svg(layout):
+    """
+    Universal function to create SVG Drawing for any CuTe layout.
+    
+    Handles layouts of any rank and structure:
+    - Rank 1: horizontal bar with top labels
+    - Rank 2: 2D grid with top and left labels (handles nested shapes)
+    - Rank 3+: horizontal slices showing first dimension as slices
+
+    Args:
+        layout: CuTe layout object (any rank, any nesting)
 
     Returns:
         svgwrite.Drawing object
@@ -53,36 +91,38 @@ def _create_layout_svg(layout):
     ]
 
     cell_size = 20
-    M, N = size(layout[0]), size(layout[1])
-
-    # Extract indices using JIT-compiled function with range_constexpr
-    indices = _extract_layout_indices(layout, M, N)
-
-    # Add margin for axis labels (1 cell on left, 1 cell on top)
-    label_margin = cell_size
-    page_width = N * cell_size + label_margin
-    page_height = M * cell_size + label_margin
-
-    dwg = svgwrite.Drawing(size=(page_width, page_height))
-
-    # Draw grid cells (offset by label_margin)
-    for i in range(M):
-        for j in range(N):
-            idx = indices[i, j]
-            x = j * cell_size + label_margin
-            y = i * cell_size + label_margin
-
+    layout_rank = int(rank(layout))
+    
+    # Extract all indices (flattened) using universal extraction
+    indices_flat = _extract_layout_indices(layout)
+    
+    # Dispatch based on rank
+    if layout_rank == 1:
+        # 1D layout: horizontal bar
+        N = int(size(layout))
+        indices = indices_flat  # Already 1D
+        
+        label_margin = cell_size
+        page_width = N * cell_size
+        page_height = cell_size + label_margin
+        
+        dwg = svgwrite.Drawing(size=(page_width, page_height))
+        
+        # Draw cells
+        for i in range(N):
+            idx = indices[i]
+            x = i * cell_size
+            y = label_margin
+            
             dwg.add(
                 dwg.rect(
                     insert=(x, y),
                     size=(cell_size, cell_size),
-                    fill=svgwrite.rgb(
-                        *rgb_255_colors[idx % len(rgb_255_colors)], mode="RGB"
-                    ),
+                    fill=svgwrite.rgb(*rgb_255_colors[idx % len(rgb_255_colors)], mode="RGB"),
                     stroke="black",
                 )
             )
-
+            
             dwg.add(
                 dwg.text(
                     str(idx),
@@ -92,33 +132,591 @@ def _create_layout_svg(layout):
                     font_size="8px",
                 )
             )
-
-    # Add axis labels (matching C++ print_latex behavior)
-    # Top labels: column indices (0 to N-1)
-    for j in range(N):
-        x = j * cell_size + label_margin + cell_size // 2
-        y = label_margin // 2
-        dwg.add(
-            dwg.text(
-                str(j),
-                insert=(x, y),
-                text_anchor="middle",
-                alignment_baseline="central",
-                font_size="8px",
+        
+        # Top labels
+        for i in range(N):
+            x = i * cell_size + cell_size // 2
+            y = label_margin // 2
+            dwg.add(
+                dwg.text(
+                    str(i),
+                    insert=(x, y),
+                    text_anchor="middle",
+                    alignment_baseline="central",
+                    font_size="8px",
+                )
             )
-        )
+        
+        return dwg
+    
+    elif layout_rank == 2:
+        # Check if this is a hierarchical 2D layout
+        if _is_hierarchical_2d(layout):
+            # Use special tiled visualization for hierarchical layouts
+            dwg = _create_hierarchical_2d_layout_svg(layout)
+            if dwg is not None:
+                return dwg
+        
+        # Regular 2D layout: grid
+        M, N = int(size(layout[0])), int(size(layout[1]))
+        # Reshape using column-major (Fortran) order since idx2crd uses column-major
+        indices = indices_flat.reshape(M, N, order='F')
+        
+        label_margin = cell_size
+        page_width = N * cell_size + label_margin
+        page_height = M * cell_size + label_margin
+        
+        dwg = svgwrite.Drawing(size=(page_width, page_height))
+        
+        # Draw grid cells
+        for i in range(M):
+            for j in range(N):
+                idx = indices[i, j]
+                x = j * cell_size + label_margin
+                y = i * cell_size + label_margin
+                
+                dwg.add(
+                    dwg.rect(
+                        insert=(x, y),
+                        size=(cell_size, cell_size),
+                        fill=svgwrite.rgb(*rgb_255_colors[idx % len(rgb_255_colors)], mode="RGB"),
+                        stroke="black",
+                    )
+                )
+                
+                dwg.add(
+                    dwg.text(
+                        str(idx),
+                        insert=(x + cell_size // 2, y + cell_size // 2),
+                        text_anchor="middle",
+                        alignment_baseline="central",
+                        font_size="8px",
+                    )
+                )
+        
+        # Top labels
+        for j in range(N):
+            x = j * cell_size + label_margin + cell_size // 2
+            y = label_margin // 2
+            dwg.add(
+                dwg.text(
+                    str(j),
+                    insert=(x, y),
+                    text_anchor="middle",
+                    alignment_baseline="central",
+                    font_size="8px",
+                )
+            )
+        
+        # Left labels
+        for i in range(M):
+            x = label_margin // 2
+            y = i * cell_size + label_margin + cell_size // 2
+            dwg.add(
+                dwg.text(
+                    str(i),
+                    insert=(x, y),
+                    text_anchor="middle",
+                    alignment_baseline="central",
+                    font_size="8px",
+                )
+            )
+        
+        return dwg
+    
+    else:
+        # 3D+ layout: visualize as slices
+        shape_sizes = _get_layout_shape_sizes(layout)
+        
+        # First dimension = number of slices
+        D0 = shape_sizes[0]
+        
+        # Flatten remaining dimensions to 2D
+        D1 = shape_sizes[1]
+        D2 = 1
+        for i in range(2, len(shape_sizes)):
+            D2 *= shape_sizes[i]
+        
+        if len(shape_sizes) == 3:
+            D2 = shape_sizes[2]
+        
+        # Reshape indices
+        total_size = int(size(layout))
+        if total_size != D0 * D1 * D2:
+            D2 = total_size // (D0 * D1)
+        
+        # Reshape using column-major (Fortran) order since idx2crd uses column-major
+        indices = indices_flat.reshape(D0, D1, D2, order='F')
+        
+        # Layout slices horizontally
+        slice_spacing = cell_size
+        label_margin = cell_size
+        
+        slice_width = D2 * cell_size + label_margin
+        slice_height = D1 * cell_size + label_margin
+        
+        page_width = D0 * slice_width + (D0 - 1) * slice_spacing
+        page_height = slice_height
+        
+        dwg = svgwrite.Drawing(size=(page_width, page_height))
+        
+        # Draw each slice
+        for d in range(D0):
+            slice_offset_x = d * (slice_width + slice_spacing)
+            
+            for i in range(D1):
+                for j in range(D2):
+                    idx = indices[d, i, j]
+                    x = slice_offset_x + j * cell_size + label_margin
+                    y = i * cell_size + label_margin
+                    
+                    dwg.add(
+                        dwg.rect(
+                            insert=(x, y),
+                            size=(cell_size, cell_size),
+                            fill=svgwrite.rgb(*rgb_255_colors[idx % len(rgb_255_colors)], mode="RGB"),
+                            stroke="black",
+                        )
+                    )
+                    
+                    dwg.add(
+                        dwg.text(
+                            str(idx),
+                            insert=(x + cell_size // 2, y + cell_size // 2),
+                            text_anchor="middle",
+                            alignment_baseline="central",
+                            font_size="8px",
+                        )
+                    )
+            
+            # Top labels
+            for j in range(D2):
+                x = slice_offset_x + j * cell_size + label_margin + cell_size // 2
+                y = label_margin // 2
+                dwg.add(
+                    dwg.text(
+                        str(j),
+                        insert=(x, y),
+                        text_anchor="middle",
+                        alignment_baseline="central",
+                        font_size="8px",
+                    )
+                )
+            
+            # Left labels
+            for i in range(D1):
+                x = slice_offset_x + label_margin // 2
+                y = i * cell_size + label_margin + cell_size // 2
+                dwg.add(
+                    dwg.text(
+                        str(i),
+                        insert=(x, y),
+                        text_anchor="middle",
+                        alignment_baseline="central",
+                        font_size="8px",
+                    )
+                )
+            
+            # Slice label
+            slice_label_x = slice_offset_x + slice_width // 2
+            slice_label_y = page_height - 5
+            dwg.add(
+                dwg.text(
+                    f"[{d},:,:]",
+                    insert=(slice_label_x, slice_label_y),
+                    text_anchor="middle",
+                    font_size="10px",
+                    font_weight="bold",
+                )
+            )
+        
+        return dwg
 
-    # Left labels: row indices (0 to M-1)
+
+def _get_layout_shape_sizes(layout):
+    """
+    Get the sizes of each mode in a layout, handling any rank.
+    
+    Args:
+        layout: CuTe layout object
+    
+    Returns:
+        List of sizes for each mode (as Python ints)
+    """
+    layout_rank = int(rank(layout))
+    if layout_rank == 1:
+        return [int(size(layout))]
+    else:
+        return [int(size(layout[i])) for i in range(layout_rank)]
+
+
+def _is_hierarchical_2d(layout):
+    """
+    Check if a rank-2 layout has hierarchical structure.
+    
+    A layout is hierarchical if either mode has depth >= 1 (tuple structure).
+    - depth 0 = simple integer
+    - depth 1 = tuple (e.g., (2,2))
+    - depth 2+ = nested tuple (e.g., ((2,2),3))
+    
+    For example: (2,(2,2)) or ((2,2),4)
+    
+    Args:
+        layout: CuTe layout object
+    
+    Returns:
+        True if hierarchical, False otherwise
+    """
+    layout_rank = int(rank(layout))
+    
+    if layout_rank != 2:
+        return False
+    
+    # Check if either mode is hierarchical (depth >= 1 means tuple/nested)
+    try:
+        depth0 = int(depth(layout[0]))
+        depth1 = int(depth(layout[1]))
+        return depth0 >= 1 or depth1 >= 1
+    except Exception as e:
+        return False
+
+
+def _extract_hierarchical_dimensions(layout, mode_idx, is_hierarchical, total_size):
+    """
+    Extract dimensions from a mode (hierarchical or simple).
+    
+    Returns:
+        (rows, cols) tuple representing the grid structure of this mode
+    """
+    if is_hierarchical:
+        # Try to extract (rows, cols) from hierarchical structure
+        try:
+            if rank(layout.shape[mode_idx]) == 2:
+                dim0 = layout.shape[mode_idx][0]
+                dim1 = layout.shape[mode_idx][1]
+                rows = int(dim0) if isinstance(dim0, int) or hasattr(dim0, '__int__') else int(size(dim0))
+                cols = int(dim1) if isinstance(dim1, int) or hasattr(dim1, '__int__') else int(size(dim1))
+                return rows, cols
+        except:
+            pass
+        # Fallback: try to factor total_size
+        import math
+        rows = cols = int(math.sqrt(total_size))
+        if rows * cols != total_size:
+            for r in range(int(math.sqrt(total_size)), 0, -1):
+                if total_size % r == 0:
+                    return r, total_size // r
+        return rows, cols
+    else:
+        # Simple mode: arrange as a vertical column (or horizontal row)
+        return total_size, 1
+
+
+def _create_hierarchical_2d_layout_svg(layout):
+    """
+    Universal SVG generator for hierarchical 2D layouts.
+    
+    Handles all cases:
+    - (simple, hierarchical): e.g., (2, (2,2))
+    - (hierarchical, simple): e.g., ((2,2), 2)
+    - (hierarchical, hierarchical): e.g., ((2,2), (3,4))
+    
+    Visualizes as a continuous grid with tile boundaries marked by thick blue lines.
+    
+    Args:
+        layout: Hierarchical rank-2 CuTe layout
+    
+    Returns:
+        svgwrite.Drawing object
+    """
+    # 8 RGB-255 Greyscale colors
+    rgb_255_colors = [
+        (255, 255, 255),
+        (230, 230, 230),
+        (205, 205, 205),
+        (180, 180, 180),
+        (155, 155, 155),
+        (130, 130, 130),
+        (105, 105, 105),
+        (80, 80, 80),
+    ]
+    
+    cell_size = 20
+    
+    # Determine which modes are hierarchical
+    depth0 = int(depth(layout[0]))
+    depth1 = int(depth(layout[1]))
+    
+    # Extract all indices
+    indices_flat = _extract_layout_indices(layout)
+    
+    # Get total dimensions for each mode
+    M, N = int(size(layout[0])), int(size(layout[1]))
+    
+    # Universal handling: Extract inner and outer dimensions
+    # Mode 0 (leftmost) = INNER (what's inside each tile)
+    # Mode 1 (rightmost) = OUTER (tile grid structure)
+    
+    inner_rows, inner_cols = _extract_hierarchical_dimensions(layout, 0, depth0 >= 1, M)
+    tile_rows, tile_cols = _extract_hierarchical_dimensions(layout, 1, depth1 >= 1, N)
+    
+    # Reshape: (inner_rows, inner_cols, tile_rows, tile_cols)
+    indices = indices_flat.reshape(inner_rows, inner_cols, tile_rows, tile_cols, order='F')
+    
+    # Universal visualization: continuous grid with tile boundaries
+    label_margin = cell_size
+    total_rows = inner_rows * tile_rows
+    total_cols = inner_cols * tile_cols
+    grid_width = total_cols * cell_size
+    grid_height = total_rows * cell_size
+    
+    # Margins: left needs space for labels, top needs space for index labels, right/bottom minimal
+    left_margin = 10 + label_margin
+    top_margin = 25  # Enough space for two rows of labels (at -15 and -5)
+    right_margin = 10
+    bottom_margin = 10
+    
+    page_width = left_margin + grid_width + right_margin
+    page_height = top_margin + grid_height + bottom_margin
+    
+    dwg = svgwrite.Drawing(size=(page_width, page_height))
+    grid_start_x = left_margin
+    grid_start_y = top_margin
+    
+    # Draw all cells in a continuous grid
+    for tile_i in range(tile_rows):
+        for tile_j in range(tile_cols):
+            for inner_i in range(inner_rows):
+                for inner_j in range(inner_cols):
+                    abs_row = tile_i * inner_rows + inner_i
+                    abs_col = tile_j * inner_cols + inner_j
+                    idx = indices[inner_i, inner_j, tile_i, tile_j]
+                    x = grid_start_x + abs_col * cell_size
+                    y = grid_start_y + abs_row * cell_size
+                    
+                    dwg.add(dwg.rect(insert=(x, y), size=(cell_size, cell_size),
+                                    fill=svgwrite.rgb(*rgb_255_colors[idx % len(rgb_255_colors)], mode="RGB"),
+                                    stroke="black", stroke_width=0.5))
+                    dwg.add(dwg.text(str(idx), insert=(x + cell_size // 2, y + cell_size // 2),
+                                    text_anchor="middle", alignment_baseline="central", font_size="8px"))
+    
+    # Draw thick blue lines at tile boundaries
+    for tile_i in range(tile_rows + 1):
+        y = grid_start_y + tile_i * inner_rows * cell_size
+        dwg.add(dwg.line(start=(grid_start_x, y), end=(grid_start_x + grid_width, y),
+                       stroke="blue", stroke_width=2))
+    for tile_j in range(tile_cols + 1):
+        x = grid_start_x + tile_j * inner_cols * cell_size
+        dwg.add(dwg.line(start=(x, grid_start_y), end=(x, grid_start_y + grid_height),
+                       stroke="blue", stroke_width=2))
+    
+    # Labels: outer (tile indices) and inner (element indices within tiles)
+    # Only show labels when the dimension is > 1 (otherwise it's redundant)
+    
+    # Top labels (columns)
+    show_inner_cols = inner_cols > 1
+    show_tile_cols = tile_cols > 1
+    
+    if show_inner_cols:
+        # Show inner column indices (closer to grid)
+        for tile_j in range(tile_cols):
+            for inner_j in range(inner_cols):
+                x = grid_start_x + (tile_j * inner_cols + inner_j) * cell_size + cell_size // 2
+                dwg.add(dwg.text(str(inner_j), insert=(x, grid_start_y - 5),
+                               text_anchor="middle", alignment_baseline="baseline", font_size="8px"))
+    if show_tile_cols:
+        # Show outer tile column indices (further from grid)
+        for tile_j in range(tile_cols):
+            x = grid_start_x + (tile_j * inner_cols + inner_cols / 2) * cell_size
+            y_pos = grid_start_y - 15 if show_inner_cols else grid_start_y - 5
+            dwg.add(dwg.text(str(tile_j), insert=(x, y_pos),
+                           text_anchor="middle", alignment_baseline="baseline", font_size="10px", fill="blue"))
+    
+    # Left labels (rows)
+    show_inner_rows = inner_rows > 1
+    show_tile_rows = tile_rows > 1
+    
+    if show_tile_rows:
+        # Show outer tile row indices (further from grid)
+        for tile_i in range(tile_rows):
+            y = grid_start_y + (tile_i * inner_rows + inner_rows / 2) * cell_size
+            dwg.add(dwg.text(str(tile_i), insert=(grid_start_x - label_margin + 3, y),
+                           text_anchor="start", alignment_baseline="central", font_size="10px", fill="blue"))
+    if show_inner_rows:
+        # Show inner row indices (closer to grid)
+        for tile_i in range(tile_rows):
+            for inner_i in range(inner_rows):
+                y = grid_start_y + (tile_i * inner_rows + inner_i) * cell_size + cell_size // 2
+                x_pos = grid_start_x - 8 if show_tile_rows else grid_start_x - label_margin + 3
+                dwg.add(dwg.text(str(inner_i), insert=(x_pos, y),
+                               text_anchor="middle" if show_tile_rows else "start", 
+                               alignment_baseline="central", font_size="8px"))
+    
+    return dwg
+
+
+@cute.jit
+def _extract_tv_layout_coords(layout, num_threads, num_values):
+    """
+    Extract thread-value layout coordinates using compile-time loops.
+
+    Args:
+        layout: CuTe TV layout object
+        num_threads: Number of threads
+        num_values: Number of values per thread
+
+    Returns:
+        2D numpy array of (i, j) coordinates for each (tid, vid) pair
+    """
+    coords = np.zeros((num_threads, num_values, 2), dtype=np.int32)
+
+    for tid in range_constexpr(num_threads):
+        for vid in range_constexpr(num_values):
+            i, j = layout[(tid, vid)]
+            coords[tid, vid, 0] = i
+            coords[tid, vid, 1] = j
+
+    return coords
+
+
+@cute.jit
+def _extract_copy_layout_coords(layout_s, layout_d, num_threads, num_values):
+    """
+    Extract coordinates from source and destination TV layouts using compile-time loops.
+
+    Args:
+        layout_s: CuTe source TV layout object
+        layout_d: CuTe destination TV layout object
+        num_threads: Number of threads
+        num_values: Number of values per thread
+
+    Returns:
+        Tuple of two 2D numpy arrays of (i, j) coordinates for each (tid, vid) pair
+    """
+    coords_s = np.zeros((num_threads, num_values, 2), dtype=np.int32)
+    coords_d = np.zeros((num_threads, num_values, 2), dtype=np.int32)
+
+    for tid in range_constexpr(num_threads):
+        for vid in range_constexpr(num_values):
+            i_s, j_s = layout_s[(tid, vid)]
+            coords_s[tid, vid, 0] = i_s
+            coords_s[tid, vid, 1] = j_s
+
+            i_d, j_d = layout_d[(tid, vid)]
+            coords_d[tid, vid, 0] = i_d
+            coords_d[tid, vid, 1] = j_d
+
+    return coords_s, coords_d
+
+
+def _create_tv_layout_svg(layout, tile_mn):
+    """
+    Internal helper to create SVG Drawing object for a TV layout.
+
+    Args:
+        layout: CuTe layout object (rank-2 TV Layout)
+        tile_mn: Rank-2 MN Tile
+
+    Returns:
+        svgwrite.Drawing object
+    """
+    assert rank(layout) == 2, "Expected a rank-2 TV Layout"
+    assert rank(tile_mn) == 2, "Expected a rank-2 MN Tile"
+
+    coord = make_identity_tensor(tile_mn)
+    layout = cute.composition(coord, layout)
+
+    # 8 RGB-255 colors
+    rgb_255_colors = [
+        (175, 175, 255),
+        (175, 255, 175),
+        (255, 255, 175),
+        (255, 175, 175),
+        (210, 210, 255),
+        (210, 255, 210),
+        (255, 255, 210),
+        (255, 210, 210),
+    ]
+
+    cell_size = 20
+    M, N = size(tile_mn[0]), size(tile_mn[1])
+    num_threads = size(layout, mode=[0])
+    num_values = size(layout, mode=[1])
+
+    # Extract coordinates using JIT-compiled function with range_constexpr
+    coords = _extract_tv_layout_coords(layout, num_threads, num_values)
+
+    # Add margin for axis labels
+    label_margin = cell_size
+    page_width = N * cell_size + label_margin
+    page_height = M * cell_size + label_margin
+
+    filled = np.zeros((M, N), dtype=bool)
+    dwg = svgwrite.Drawing(size=(page_width, page_height))
+
+    # Draw white background grid (offset by label_margin)
     for i in range(M):
-        x = label_margin // 2
-        y = i * cell_size + label_margin + cell_size // 2
+        for j in range(N):
+            dwg.add(
+                dwg.rect(
+                    insert=(j * cell_size + label_margin, i * cell_size + label_margin),
+                    size=(cell_size, cell_size),
+                    fill="white",
+                    stroke="black",
+                )
+            )
+
+    # Draw colored cells with thread/value labels
+    for tid in range(num_threads):
+        for vid in range(num_values):
+            i, j = int(coords[tid, vid, 0]), int(coords[tid, vid, 1])
+            dwg.add(
+                dwg.rect(
+                    insert=(j * cell_size + label_margin, i * cell_size + label_margin),
+                    size=(cell_size, cell_size),
+                    fill=svgwrite.rgb(*rgb_255_colors[tid % len(rgb_255_colors)], mode="RGB"),
+                    stroke="black",
+                )
+            )
+            text_label = f"T{tid}:V{vid}"
+            dwg.add(
+                dwg.text(
+                    text_label,
+                    insert=(j * cell_size + label_margin + cell_size // 2, i * cell_size + label_margin + cell_size // 2),
+                    text_anchor="middle",
+                    alignment_baseline="central",
+                    font_size="6px",
+                )
+            )
+            filled[i, j] = True
+
+    # Check for any unfilled cells in the MxN domain
+    unfilled_cells = []
+    for i in range(M):
+        for j in range(N):
+            if not filled[i, j]:
+                unfilled_cells.append((i, j))
+
+    # Draw axis labels (offset by label_margin)
+    for i in range(M):
         dwg.add(
             dwg.text(
                 str(i),
-                insert=(x, y),
+                insert=(label_margin // 2, i * cell_size + label_margin + cell_size // 2),
                 text_anchor="middle",
                 alignment_baseline="central",
-                font_size="8px",
+                font_size="10px",
+            )
+        )
+
+    for j in range(N):
+        dwg.add(
+            dwg.text(
+                str(j),
+                insert=(j * cell_size + label_margin + cell_size // 2, label_margin // 2),
+                text_anchor="middle",
+                alignment_baseline="central",
+                font_size="10px",
             )
         )
 
@@ -312,9 +910,15 @@ def _create_tv_layout_svg(layout, tile_mn):
 def render_layout_svg(layout, output_file):
     """
     Render a CuTe layout as an SVG grid with color-coded cells.
+    
+    Supports layouts of any rank and structure:
+    - 1D: e.g., 8:1 - horizontal bar
+    - 2D: e.g., (4,8):(1,4) - 2D grid
+    - 3D+: e.g., (2,4,8):(1,8,32) - visualized as horizontal slices
+    - Hierarchical: e.g., (2,(2,2)):(4,(2,1)) - treated by flattening
 
     Args:
-        layout: CuTe layout object
+        layout: CuTe layout object (any rank, any structure)
         output_file: Output SVG file path
     """
     dwg = _create_layout_svg(layout)
@@ -355,9 +959,15 @@ def display_svg(file_path):
 def display_layout(layout):
     """
     Display a CuTe layout directly in Jupyter notebooks without writing to disk.
+    
+    Supports layouts of any rank and structure:
+    - 1D: e.g., 8:1 - horizontal bar
+    - 2D: e.g., (4,8):(1,4) - 2D grid
+    - 3D+: e.g., (2,4,8):(1,8,32) - visualized as horizontal slices
+    - Hierarchical: e.g., (2,(2,2)):(4,(2,1)) - treated by flattening
 
     Args:
-        layout: CuTe layout object
+        layout: CuTe layout object (any rank, any structure)
 
     Returns:
         IPython display object
