@@ -1,15 +1,12 @@
 # cute-viz
-
 A Python package for visualizing CuTe tensor layouts as SVG images.
 
 ## Installation
-
 ```bash
 pip install -U git+https://github.com/NTT123/cute-viz.git
 ```
 
 ## Usage
-
 ```python
 from cutlass import cute
 from cute_viz import render_layout_svg, display_layout
@@ -32,7 +29,6 @@ main()
 ```
 
 ## Examples
-
 | Example | Output |
 |---------|--------|
 | [**Basic Layout**](examples/layout_example.py) | ![Basic Layout](assets/layout.svg) |
@@ -43,11 +39,14 @@ main()
 | [**LDMATRIX Copy Atom**](examples/ldmatrix_copy_example.py) | ![LDMATRIX Layout](assets/ldmatrix_copy.svg) |
 | [**MMA Atom (16×8×8)**](examples/mma_atom_example.py) | ![MMA Layout](assets/mma_layout.svg) |
 
-## Credits
+## Contributors
 
+Thanks to the following contributors for their improvements to cute-viz:
+
+- [@joydddd](https://github.com/joydddd) - Added support for 1D & hierarchical layouts ([#1](https://github.com/NTT123/cute-viz/pull/1))
+
+## Credits
 Based on the original visualization code by [Cris Cecka](https://github.com/ccecka) from [NVIDIA/cutlass#2453](https://github.com/NVIDIA/cutlass/issues/2453#issuecomment-3133409976).
 
 ## License
-
 MIT License - see LICENSE file for details.
-
